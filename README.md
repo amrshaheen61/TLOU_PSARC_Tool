@@ -4,4 +4,4 @@ by Amr Shaheen
 <hr>
 when import:
 Please remember to take a backup of your PSARC file before doing anything.
-Leave the files you want to import only in FilesMap.txt
+Leave the files you want to import only in FilesMap.txt
