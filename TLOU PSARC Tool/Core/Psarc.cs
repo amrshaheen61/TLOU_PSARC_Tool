@@ -20,7 +20,7 @@ namespace TLOU_PSARC_Tool.Core
             public int headerSize;
             public int entrySize;
             public int entryCount;
-            public int DataBlockSize;
+            public uint DataBlockSize;
             public int Flags;
 
             public void Read(IStream stream)
@@ -32,7 +32,7 @@ namespace TLOU_PSARC_Tool.Core
                 headerSize = stream.GetIntValue();
                 entrySize = stream.GetIntValue();
                 entryCount = stream.GetIntValue();
-                DataBlockSize = stream.GetIntValue();
+                DataBlockSize = stream.GetUIntValue();
                 Flags = stream.GetIntValue();
                 if (idstring != "PSAR")
                 {
@@ -49,7 +49,7 @@ namespace TLOU_PSARC_Tool.Core
                 stream.SetIntValue(headerSize);
                 stream.SetIntValue(entrySize);
                 stream.SetIntValue(entryCount);
-                stream.SetIntValue(DataBlockSize);
+                stream.SetUIntValue(DataBlockSize);
                 stream.SetIntValue(Flags);
             }
 
@@ -64,27 +64,33 @@ namespace TLOU_PSARC_Tool.Core
             public string Name { get; set; }
             public int CompressedBlockSizeIndex { get; set; }
             public byte Temp1 { get; set; }
-            public int UncompressedSize { get; set; }
+            public long UncompressedSize { get; set; }
             public byte Temp2 { get; set; }
             public long Offset { get; set; }
+
+            public long EntryOffset { get; set; }
 
             public List<DecmpressBlock> DempressBlocks = new List<DecmpressBlock>();
             public class DecmpressBlock
             {
                 public long Offset { get; set; }
-                public int CompressSize { get; set; }
-                public int DecompressSize { get; set; }
+                public long CompressSize { get; set; }
+                public long DecompressSize { get; set; }
             }
 
             public void Read(Psarc psarc)
             {
+                EntryOffset = psarc.Stream.Position;
+
                 Md5Hash = psarc.Stream.GetBytes(16);
                 Name = psarc.GetName(BitConverter.ToString(Md5Hash, 0).Replace("-", ""));
                 CompressedBlockSizeIndex = psarc.Stream.GetIntValue();
                 Temp1 = psarc.Stream.GetByteValue();
-                UncompressedSize = psarc.Stream.GetIntValue();
+                UncompressedSize = psarc.Stream.GetUIntValue();
+                UncompressedSize |= ((long)Temp1 << 32);
                 Temp2 = psarc.Stream.GetByteValue();
-                Offset = psarc.Stream.GetIntValue();
+                Offset = psarc.Stream.GetUIntValue();
+                Offset |= ((long)Temp2 << 32);
                 CalcFileSize(psarc);
             }
 
@@ -92,10 +98,12 @@ namespace TLOU_PSARC_Tool.Core
             {
                 stream.SetBytes(Md5Hash);
                 stream.SetIntValue(CompressedBlockSizeIndex);
+                Temp1 = (byte)((UncompressedSize >> 32) & 0xFF);
                 stream.SetByteValue(Temp1);
-                stream.SetIntValue(UncompressedSize);
+                stream.SetUIntValue((uint)(UncompressedSize & 0xFFFFFFFF));
+                Temp2 = (byte)((Offset >> 32) & 0xFF);
                 stream.SetByteValue(Temp2);
-                stream.SetIntValue((int)Offset);
+                stream.SetUIntValue((uint)(Offset & 0xFFFFFFFF));
             }
 
             //private int GetFileUSize()
@@ -107,7 +115,7 @@ namespace TLOU_PSARC_Tool.Core
 
             public void CalcFileSize(Psarc psarc)
             {
-                int uncompressedSize = UncompressedSize;
+                long uncompressedSize = UncompressedSize;
                 int compressedBlockSizeIndex = CompressedBlockSizeIndex;
                 long offset = Offset;
 
@@ -122,20 +130,20 @@ namespace TLOU_PSARC_Tool.Core
                     return;
                 }
 
-                int bufferCount = (uncompressedSize / psarc.header.DataBlockSize) + 1;
+                long bufferCount = (uncompressedSize + (psarc.header.DataBlockSize - 1)) / psarc.header.DataBlockSize;
 
-                for (int i = 0; i < bufferCount; i++)
+                for (long i = 0; i < bufferCount; i++)
                 {
-                    int size = psarc.ArraySize[compressedBlockSizeIndex] == 0 ? psarc.header.DataBlockSize : psarc.ArraySize[compressedBlockSizeIndex];
+                    uint size = psarc.ArraySize[compressedBlockSizeIndex] == 0 ? psarc.header.DataBlockSize : psarc.ArraySize[compressedBlockSizeIndex];
 
 
-                    if ((size == 0 || size == psarc.header.DataBlockSize) && i == 0)
+                   /* if ((size == 0 || size == psarc.header.DataBlockSize) && i == 0)
                     {
                         size = 0;
 
                         for (int n = 0; n < bufferCount; n++)
                         {
-                            int bufferSize = psarc.ArraySize[compressedBlockSizeIndex];
+                            uint bufferSize = psarc.ArraySize[compressedBlockSizeIndex];
 
                             if (bufferSize == 0)
                             {
@@ -146,7 +154,7 @@ namespace TLOU_PSARC_Tool.Core
                             compressedBlockSizeIndex++;
                             i++;
                         }
-                    }
+                    }*/
 
                     if (uncompressedSize == size)
                     {
@@ -198,10 +206,11 @@ namespace TLOU_PSARC_Tool.Core
                     });
                     return;
                 }
-                int uncompressedSize = UncompressedSize;
-                int bufferCount = (UncompressedSize / psarc.header.DataBlockSize) + 1;
+                long uncompressedSize = UncompressedSize;
 
-                for (int i = 0; i < bufferCount; i++)
+                long bufferCount = (uncompressedSize + (psarc.header.DataBlockSize - 1)) / psarc.header.DataBlockSize;
+
+                for (long i = 0; i < bufferCount; i++)
                 {
 
                     if (uncompressedSize >= psarc.header.DataBlockSize)
@@ -237,7 +246,7 @@ namespace TLOU_PSARC_Tool.Core
         public string FileName { get; set; }
         public IStream Stream { get; set; }
         public Header header { get; set; }
-        public int[] ArraySize { get; set; }
+        public uint[] ArraySize { get; set; }
         public long StartOffset { get; set; }
 
         public static Psarc Load(string path)
@@ -266,8 +275,8 @@ namespace TLOU_PSARC_Tool.Core
             Entry Namesentry = new Entry()
             {
                 CompressedBlockSizeIndex = Stream.GetIntValue(false, 48),
-                UncompressedSize = Stream.GetIntValue(false, 53),
-                Offset = Stream.GetIntValue(false, 58)
+                UncompressedSize = Stream.GetUIntValue(false, 53),
+                Offset = Stream.GetUIntValue(false, 58)
             };
             Namesentry.CalcFileSize(this);
 
@@ -347,7 +356,7 @@ namespace TLOU_PSARC_Tool.Core
             Stream.SetBytes(Encoding.ASCII.GetBytes("\u0054\u004c\u004f\u0055 \u0050\u0053\u0041\u0052\u0043 \u0054\u006f\u006f\u006c \u0042\u0079 \u0041\u006d\u0072 \u0053\u0068\u0061\u0068\u0065\u0065\u006e\u0028\u0061\u006d\u0072\u0073\u0068\u0061\u0068\u0065\u0065\u006e\u0036\u0031\u0029"));
         }
 
-        private int[] ReadSizeArray()
+        private uint[] ReadSizeArray()
         {
             Stream.Seek((StartOffset + (header.entryCount * header.entrySize)));
 
@@ -358,7 +367,7 @@ namespace TLOU_PSARC_Tool.Core
                 ByteLength++;
             }
 
-            List<int> values = new List<int>();
+            List<uint> values = new List<uint>();
 
             while (Stream.Position != header.headerSize)
             {
@@ -373,12 +382,12 @@ namespace TLOU_PSARC_Tool.Core
                     case 30://24 bit
                         break;
                     case 40:
-                        values.Add(Stream.GetIntValue());
+                        values.Add(Stream.GetUIntValue());
                         break;
                     case 80://64 bit
                         break;
                     default:
-                        values.Add(Stream.GetIntValue());
+                        values.Add(Stream.GetUIntValue());
                         break;
                 }
             }
@@ -395,11 +404,11 @@ namespace TLOU_PSARC_Tool.Core
 
                 if (Block.DecompressSize == Block.CompressSize)
                 {
-                    uncompressfile.SetBytes(Stream.GetBytes(Block.CompressSize));
+                    uncompressfile.SetBytes(Stream.GetBytes((int)Block.CompressSize));
                 }
                 else
                 {
-                    uncompressfile.SetBytes(Compression.Decompress(Stream.GetBytes(Block.CompressSize), Block.DecompressSize, header.CompressionFormat));
+                    uncompressfile.SetBytes(Compression.Decompress(Stream.GetBytes((int)Block.CompressSize), (int)Block.DecompressSize, header.CompressionFormat));
                 }
             }
             return uncompressfile.ToArray();
@@ -417,7 +426,7 @@ namespace TLOU_PSARC_Tool.Core
         private void BuildHaeder()
         {
             //make array size
-            List<int> ListSize = new List<int>();
+            List<uint> ListSize = new List<uint>();
 
             foreach (var Entry in Entries)
             {
@@ -506,12 +515,12 @@ namespace TLOU_PSARC_Tool.Core
             Stream.Seek(0, SeekOrigin.End);
             AddSign();
             entry.Offset = (int)Stream.Position;
-            entry.UncompressedSize = (int)mStream.Length;
+            entry.UncompressedSize = (uint)mStream.Length;
             entry.CalcBlocksSize(this);
 
             foreach (var block in entry.DempressBlocks)
             {
-                Stream.SetBytes(mStream.GetBytes(block.CompressSize));
+                Stream.SetBytes(mStream.GetBytes((int)block.CompressSize));
             }
         }
 

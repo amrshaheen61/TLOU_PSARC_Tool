@@ -75,6 +75,8 @@ namespace TLOU_PSARC_Tool.Forms
                     File.WriteAllBytes(entry.Key, psarc.GetFile(entry.Key));
                     File.AppendAllText("FilesMap.txt", entry.Key + Environment.NewLine);
                     Print("Done\r\n");
+
+                    Application.DoEvents();
                 }
                 psarc.Dispose();
                 MessageBox.Show("Done!");
